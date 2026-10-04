@@ -61,8 +61,9 @@ and prints the same lines as in service.
 The server picks Pryon for any model whose name starts with `pryon_`. If
 Pryon cannot run, the server uses openWakeWord with that same
 `pryon_alexa.onnx`, which is a working Alexa model. That happens when the
-helper, library or manifest is missing, when the helper never says `READY`
-within 5 s, on a fatal error line, or after 5 crashes in a row. The server
+helper, library or manifest is missing, when the first helper never says
+`READY` within 5 s (later on that counts as a crash), on a fatal error line,
+or after 5 crashes in a row. The server
 log names the engine and, if it fell back, the reason. Lines from the helper
 start with `[pryon]`, including one every 30 s with `cpu=`, `accepts=`,
 `nearMiss=`, `restarts=`, `drops=`, `stale=` and the latency from word end
