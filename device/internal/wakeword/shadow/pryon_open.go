@@ -86,6 +86,9 @@ func pryonConfigFor(stem string) (pryonConfig, error) {
 	if cfg.AtOffsetFrames, err = envInt("EM_PRYON_AT_OFFSET_FRAMES", DefaultPryonAtOffsetFrames, 0, 12); err != nil {
 		return cfg, err
 	}
+	if cfg.FirstReadyMs, err = envInt("EM_PRYON_READY_TIMEOUT_MS", int(pryonFirstReadyTimeout/time.Millisecond), 1000, 300000); err != nil {
+		return cfg, err
+	}
 	return cfg, nil
 }
 

@@ -88,6 +88,12 @@ const (
 	// pryonReadyTimeout: a helper that has not said READY this long after it
 	// started is killed. Measured: model load plus warm-up takes about 1s.
 	pryonReadyTimeout = 5 * time.Second
+	// pryonFirstReadyTimeout replaces pryonReadyTimeout until a helper has
+	// been ready once (EM_PRYON_READY_TIMEOUT_MS). Missing it is the one READY
+	// timeout that falls back to openWakeWord at once, so it must not be
+	// judged on a cold boot, when dlopen of /system/lib, the model load and
+	// the warm-up compete with everything else starting up.
+	pryonFirstReadyTimeout = 20 * time.Second
 	// pryonStuckAfter: a ready helper that has refused every frame this long
 	// (errBehind, i.e. the writer channel stayed full) is killed and counted
 	// as a crash. It has stopped reading stdin — a wedged decoder thread
@@ -154,6 +160,8 @@ type pryonConfig struct {
 	ResetMode int
 	// AtOffsetFrames: see wakeAt.
 	AtOffsetFrames int
+	// FirstReadyMs: see pryonFirstReadyTimeout. 0 means the default.
+	FirstReadyMs int
 }
 
 // pryonEvent is one stdout line, stamped when it was READ — not when the
@@ -411,8 +419,11 @@ type pryonEngine struct {
 	killWait   time.Duration // after SIGKILL, for the process and its readers
 	staleAfter time.Duration
 	readyAfter time.Duration
-	stderr     lineLimiter
-	stdoutJunk lineLimiter
+	// firstReadyAfter applies instead of readyAfter until any helper has
+	// been ready.
+	firstReadyAfter time.Duration
+	stderr          lineLimiter
+	stdoutJunk      lineLimiter
 
 	p           *pryonProc
 	everReady   bool
@@ -492,6 +503,10 @@ func newPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, error
 		staleAfter: pryonStaleAfter,
 		readyAfter: pryonReadyTimeout,
 		fallback:   fallback,
+	}
+	e.firstReadyAfter = pryonFirstReadyTimeout
+	if cfg.FirstReadyMs > 0 {
+		e.firstReadyAfter = time.Duration(cfg.FirstReadyMs) * time.Millisecond
 	}
 	e.stderr.perMinute = pryonStderrPerMinute
 	e.stdoutJunk.perMinute = 5
@@ -783,9 +798,13 @@ func (e *pryonEngine) pump() {
 			e.drain(p, false, now)
 			e.handleExit(p)
 		default:
-			if !p.ready && !p.killedByUs && now.Sub(p.started) >= e.readyAfter {
+			limit := e.readyAfter
+			if !e.everReady {
+				limit = e.firstReadyAfter
+			}
+			if !p.ready && !p.killedByUs && now.Sub(p.started) >= limit {
 				p.killedByUs = true
-				p.killReason = fmt.Sprintf("no READY within %s", e.readyAfter)
+				p.killReason = fmt.Sprintf("no READY within %s", limit)
 				killGroup(p) // the exit is handled on a later frame
 			}
 		}
