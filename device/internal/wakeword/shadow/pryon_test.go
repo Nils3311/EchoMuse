@@ -816,6 +816,30 @@ func TestPryonPushNeverBlocks(t *testing.T) {
 	}
 }
 
+// TestPryonStuckHelperIsRestarted: a helper that said READY and then stopped
+// reading stdin (a wedged decoder thread, SIGSTOP) neither exits nor misses a
+// READY. Without a watchdog every frame is refused forever and the device is
+// deaf while reporting itself ready. After pryonStuckAfter of nothing but
+// errBehind it is killed and handled as a crash.
+func TestPryonStuckHelperIsRestarted(t *testing.T) {
+	h := newHarness(t, "noread")
+	h.ready()
+	p := h.e.p
+	deadline := time.Now().Add(5 * time.Second)
+	for h.e.p == p && time.Now().Before(deadline) {
+		_ = h.e.Push(silence(), h.clk.Add(80*time.Millisecond))
+		time.Sleep(time.Millisecond)
+	}
+	if h.e.p == p {
+		t.Fatalf("a helper refusing every frame for %v was never restarted (drops=%d)",
+			h.clk.Now().Sub(p.started), h.e.win.drops)
+	}
+	if !p.killedByUs || !strings.Contains(p.killReason, "not reading stdin") ||
+		h.e.crashStreak != 1 || h.e.failing {
+		t.Fatalf("killed=%v reason=%q streak=%d failing=%v", p.killedByUs, p.killReason, h.e.crashStreak, h.e.failing)
+	}
+}
+
 // TestPryonCloseNeverHangs: Close runs on the config path. It must return in
 // bounded time whatever state the helper is in, and leave nothing behind
 // (checked by the harness). The clock stands still here, so no READY timeout
