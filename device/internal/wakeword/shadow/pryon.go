@@ -88,6 +88,14 @@ const (
 	// pryonReadyTimeout: a helper that has not said READY this long after it
 	// started is killed. Measured: model load plus warm-up takes about 1s.
 	pryonReadyTimeout = 5 * time.Second
+	// pryonStuckAfter: a ready helper that has refused every frame this long
+	// (errBehind, i.e. the writer channel stayed full) is killed and counted
+	// as a crash. It has stopped reading stdin — a wedged decoder thread
+	// blocking PushSamples, or a stopped process — and would otherwise neither
+	// exit nor miss a READY: the device would be deaf while reporting itself
+	// ready, indefinitely. 2s is 25 frames, far beyond any scheduling hiccup
+	// the 640ms writer channel is there to absorb.
+	pryonStuckAfter = 2 * time.Second
 	// pryonLongRun: a helper that ran at least this long before dying is
 	// treated as having worked; its exit starts a fresh crash series.
 	pryonLongRun = 60 * time.Second
@@ -377,11 +385,14 @@ type pryonProc struct {
 	lost atomic.Uint64
 
 	// Scorer goroutine only.
-	ready      bool
-	fatal      string // "CODE text" of a fatal E line
-	lastE      string
-	killedByUs bool
-	killReason string
+	ready bool
+	// behindSince is when the current run of errBehind began; zero while
+	// frames are being accepted.
+	behindSince time.Time
+	fatal       string // "CODE text" of a fatal E line
+	lastE       string
+	killedByUs  bool
+	killReason  string
 }
 
 func (p *pryonProc) stop() { p.quitter.Do(func() { close(p.quit) }) }
@@ -990,8 +1001,7 @@ func (e *pryonEngine) Push(pcm []int16, at time.Time) error {
 	if e.resetPending {
 		if !trySend(p, encodePryonFrame('R', nil)) {
 			// The gap marker must precede the audio after the gap.
-			e.win.drops++
-			return errBehind
+			return e.behind(p)
 		}
 		e.resetPending = false
 	}
@@ -1005,13 +1015,30 @@ func (e *pryonEngine) Push(pcm []int16, at time.Time) error {
 		}
 	}
 	if !trySend(p, encodePryonAudio(pcm)) {
-		e.win.drops++
-		return errBehind
+		return e.behind(p)
 	}
+	p.behindSince = time.Time{}
 	e.ring.add(pryonFrame{start: e.fed, n: uint32(len(pcm)), at: at})
 	e.fed += uint64(len(pcm))
 	e.lastAt = at
 	return nil
+}
+
+// behind counts a refused frame and is the stuck-helper watchdog: see
+// pryonStuckAfter. The kill is noticed as an exit on a later frame and goes
+// through the ordinary crash policy (backoff, and failover after five).
+func (e *pryonEngine) behind(p *pryonProc) error {
+	e.win.drops++
+	now := e.now()
+	if p.behindSince.IsZero() {
+		p.behindSince = now
+	} else if !p.killedByUs && now.Sub(p.behindSince) >= pryonStuckAfter {
+		p.killedByUs = true
+		p.killReason = fmt.Sprintf("not reading stdin for %s", now.Sub(p.behindSince).Round(time.Millisecond))
+		e.logf("[pryon] helper pid %d is %s; killing it", p.pid, p.killReason)
+		killGroup(p)
+	}
+	return errBehind
 }
 
 func trySend(p *pryonProc, b []byte) bool {
