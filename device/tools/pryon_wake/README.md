@@ -109,6 +109,9 @@ detects, is filtered out.
 - `libpryon.so` and its models belong to Amazon. They are **not** shipped
   here. The helper uses the copies already in the device's `/system`.
   `pryon_api.h` is a reverse-engineered subset (MIT, from echo-dot-assist).
+- **No heartbeat.** A helper that keeps reading audio while the library's
+  decoder has stopped producing results is not detected: no crash, no
+  restart, just no wakes. (One that stops reading is restarted after 2 s.)
 - **Several Echoes: Pryon wins the arbitration.** The time a Pryon wake
   reports is the capture time of the frame three frames before the word end,
   so that the session does not cut off the start of the command. The
