@@ -38,6 +38,8 @@ const (
 	cmdFatal    = 0x4545 // E ABI, exit 6
 	cmdSIGKILL  = 0x4B4B // SIGKILL itself, like the OOM killer would
 	cmdSplitW   = 0x5858 // W ALEXA, written in two pieces 30ms apart
+	cmdOddScore = 0x4F4F // W ALEXA with the score text given by sample 3: see oddScores
+	cmdLongLine = 0x4C4C // a stdout line longer than the reader accepts
 	fakeFrameSz = 2560
 )
 
@@ -112,6 +114,11 @@ func fakePryonHelper() int {
 				out.WriteString(line[:5])
 				time.Sleep(30 * time.Millisecond)
 				out.WriteString(line[5:])
+			case cmdOddScore:
+				seq++
+				fmt.Fprintf(out, "W %d ALEXA 2 %d %d %s\n", seq, begin, end, oddScores[s(3)])
+			case cmdLongLine:
+				fmt.Fprintf(out, "N ALEXA 0 0 %s\n", strings.Repeat("9", 70*1024))
 			case cmdNear:
 				fmt.Fprintf(out, "N ALEXA %d %d %.3f\n", begin, end, score)
 			case cmdStop:
@@ -129,6 +136,10 @@ func fakePryonHelper() int {
 		}
 	}
 }
+
+// oddScores are score fields a W line could carry that are not a usable
+// score, indexed by sample 3 of a cmdOddScore frame.
+var oddScores = []string{"nan", "NaN", "+Inf", "-Inf", "1.5", "-0.5"}
 
 // --- test scaffolding --------------------------------------------------------
 
@@ -609,6 +620,32 @@ func TestPryonUnknownScoreCountsAsCertain(t *testing.T) {
 	h.until("the wake", func() bool { return h.e.hold.left > 0 })
 	if score, _, _ := h.e.Score(); score != 1 {
 		t.Fatalf("score %v for a wake without a library score, want 1", score)
+	}
+}
+
+// TestPryonUnusableScoreCountsAsCertain: NaN compares false with everything,
+// so a NaN score would silently never cross; Inf or anything outside [0,1]
+// is no score either. Such a wake was still accepted by Pryon's own
+// threshold: it goes on as 1, like a missing score, and is counted.
+func TestPryonUnusableScoreCountsAsCertain(t *testing.T) {
+	h := newHarness(t, "")
+	h.ready()
+	for i := range oddScores {
+		_ = h.push(silence())
+		f := command(cmdOddScore, h.e.fed, 0)
+		f[3] = int16(i)
+		_ = h.push(f)
+		h.until("wake with score "+oddScores[i], func() bool { return h.e.hold.left > 0 })
+		if s, _, _ := h.e.Score(); s != 1 {
+			t.Errorf("score field %q reached the scorer as %v, want 1", oddScores[i], s)
+		}
+		h.e.hold.left = 0
+	}
+	if h.e.win.badScore != uint64(len(oddScores)) {
+		t.Errorf("badScore %d, want %d", h.e.win.badScore, len(oddScores))
+	}
+	if n := h.log.count("unusable score"); n == 0 || n > 5 {
+		t.Errorf("%d log lines about unusable scores, want 1..5", n)
 	}
 }
 
