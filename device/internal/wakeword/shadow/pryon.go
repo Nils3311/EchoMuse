@@ -390,6 +390,10 @@ type pryonProc struct {
 	exitAt  time.Time
 	// lost counts stdout lines dropped because events was full.
 	lost atomic.Uint64
+	// stdoutErr is set by the stdout reader when its scanner gives up (a line
+	// over 64KiB). Everything after that is drained unread, so the helper
+	// can never report a wake again; pump kills it as a crash.
+	stdoutErr atomic.Pointer[string]
 
 	// Scorer goroutine only.
 	ready bool
@@ -661,8 +665,13 @@ func (e *pryonEngine) readStdout(p *pryonProc, r *os.File) {
 			p.lost.Add(1)
 		}
 	}
+	if err := sc.Err(); err != nil {
+		msg := err.Error()
+		p.stdoutErr.Store(&msg)
+	}
 	// A line too long for the scanner ends Scan, but the helper may still be
-	// writing: keep draining so it can never block on a full stdout.
+	// writing: keep draining so it can never block on a full stdout until it
+	// has been killed.
 	_, _ = io.Copy(io.Discard, r)
 }
 
@@ -803,6 +812,12 @@ func (e *pryonEngine) pump() {
 			e.drain(p, false, now)
 			e.handleExit(p)
 		default:
+			if msg := p.stdoutErr.Load(); msg != nil && !p.killedByUs {
+				// Logged once, by crashed(), through the kill reason.
+				p.killedByUs = true
+				p.killReason = "stdout unreadable (" + *msg + ")"
+				killGroup(p)
+			}
 			limit := e.readyAfter
 			if !e.everReady {
 				limit = e.firstReadyAfter
