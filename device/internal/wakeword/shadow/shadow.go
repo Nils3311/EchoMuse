@@ -417,6 +417,9 @@ func (s *Scorer) Close() {
 
 func (s *Scorer) run() {
 	defer close(s.done)
+	// playback is what the engine was last told about the barge-in bar, so it
+	// hears about changes only (Pryon turns each into a frame to its helper).
+	playback := false
 	for {
 		var q queued
 		select {
@@ -432,6 +435,10 @@ func (s *Scorer) run() {
 		lowBar := threshold < s.threshold
 		s.stats.Threshold = threshold
 		s.mu.Unlock()
+		if lowBar != playback {
+			playback = lowBar
+			s.eng.SetPlayback(lowBar)
+		}
 
 		if reset {
 			s.eng.Reset()
@@ -449,6 +456,11 @@ func (s *Scorer) run() {
 		}
 		if !s.eng.Ready() {
 			s.mu.Lock()
+			// An engine can stop being ready without a Reset (a Pryon helper
+			// restarting). For openWakeWord this changes nothing: its
+			// detector only becomes un-ready through Reset, which already
+			// cleared the flag.
+			s.ready = false
 			s.stats.Frames++
 			s.stats.NotReady++
 			s.mu.Unlock()
