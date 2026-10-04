@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -228,6 +229,9 @@ func TestKillOrphanHelpers(t *testing.T) {
 	proc("102", "/data/local/bin/server\x00", "102 (server) S 1 102 102 0 -1 0")
 	proc("103", "", "103 (kworker) S 2 0 0 0 -1 0")
 	os.MkdirAll(filepath.Join(root, "self"), 0o755)
+	// This process, as if it were an orphaned helper.
+	self := strconv.Itoa(os.Getpid())
+	proc(self, "/x/pryon_wake\x00", self+" (pryon_wake) S 1 0 0 0 -1 0")
 
 	oldRoot, oldKill := procRoot, killPid
 	t.Cleanup(func() { procRoot, killPid = oldRoot, oldKill })

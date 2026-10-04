@@ -141,7 +141,10 @@ func killOrphanHelpers(base string, logf func(string, ...any)) int {
 	killed := 0
 	for _, ent := range ents {
 		pid, err := strconv.Atoi(ent.Name())
-		if err != nil || pid <= 1 {
+		// Never this process: where the helper is the server's own binary (the
+		// tests run the test binary as a fake helper), an orphaned server
+		// would otherwise match.
+		if err != nil || pid <= 1 || pid == os.Getpid() {
 			continue
 		}
 		cmdline, err := os.ReadFile(filepath.Join(procRoot, ent.Name(), "cmdline"))
