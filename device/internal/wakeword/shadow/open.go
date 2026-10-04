@@ -48,7 +48,9 @@ func ModelStem(owwModel string) string {
 }
 
 // Open loads ONNX Runtime and the three models for owwModel, and starts a
-// Scorer.
+// Scorer. A model whose stem starts with PryonPrefix runs on Pryon instead,
+// falling back to openWakeWord on the same model file whenever Pryon cannot
+// run (see openWithPryon).
 //
 // A missing library or model returns an error and is NOT a failure of the
 // device: shadow mode is off until someone installs them, the caller logs it
@@ -59,6 +61,9 @@ func Open(owwModel string, threshold float32, onCross func(score, threshold floa
 	stem := ModelStem(owwModel)
 	if stem == "" {
 		return nil, fmt.Errorf("shadow: no wake word model configured")
+	}
+	if strings.HasPrefix(stem, PryonPrefix) {
+		return openWithPryon(dir, stem, threshold, onCross)
 	}
 	eng, err := openOWW(dir, stem)
 	if err != nil {
