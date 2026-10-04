@@ -109,6 +109,17 @@ detects, is filtered out.
 - `libpryon.so` and its models belong to Amazon. They are **not** shipped
   here. The helper uses the copies already in the device's `/system`.
   `pryon_api.h` is a reverse-engineered subset (MIT, from echo-dot-assist).
+- **Several Echoes: Pryon wins the arbitration.** The time a Pryon wake
+  reports is the capture time of the frame three frames before the word end,
+  so that the session does not cut off the start of the command. The
+  controller also reads that time as "heard at" for "first to hear wins".
+  openWakeWord reports the frame where its score crossed, which is at or
+  after the word end. A Pryon Echo therefore claims to have heard the same
+  word about 320 to 560 ms earlier than an openWakeWord Echo. With a 300 ms
+  arbitration window it wins even from across the house, and the two may be
+  counted as separate utterances, so both answer. With a single Echo this
+  does not matter. Fixing it needs separate session-start and heard-at
+  times, which means a change to `server.go`.
 - Only the en-US ALEXA model is mapped (`pryon_alexa`). For any other model,
   set `EM_PRYON_MANIFEST`.
 - **Inherited descriptors.** The server's microphone descriptor is opened
