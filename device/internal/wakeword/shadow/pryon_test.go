@@ -649,7 +649,7 @@ func TestPryonUnusableScoreCountsAsCertain(t *testing.T) {
 	}
 }
 
-// TestPryonResetDropsWakes is review B3: a wake held, queued, or arriving
+// TestPryonResetDropsWakes: a wake held, queued, or arriving
 // late about audio from before a Reset must never open a session after it.
 func TestPryonResetDropsWakes(t *testing.T) {
 	h := newHarness(t, "")
