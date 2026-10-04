@@ -906,6 +906,24 @@ func TestPryonStuckHelperIsRestarted(t *testing.T) {
 	}
 }
 
+// TestPryonUnreadableStdoutIsACrash: a stdout line longer than the reader's
+// limit ends its scanner. From then on every line of that helper is drained
+// unread — it would go on as "ready" and never report a wake again. It is
+// killed and handled as a crash instead.
+func TestPryonUnreadableStdoutIsACrash(t *testing.T) {
+	h := newHarness(t, "")
+	h.ready()
+	p := h.e.p
+	_ = h.push(command(cmdLongLine, 0, 0))
+	h.until("the helper to be replaced", func() bool { return h.e.p != p })
+	if !p.killedByUs || !strings.Contains(p.killReason, "stdout") || h.e.crashStreak != 1 {
+		t.Fatalf("killed=%v reason=%q streak=%d", p.killedByUs, p.killReason, h.e.crashStreak)
+	}
+	if n := h.log.count("stdout unreadable"); n != 1 {
+		t.Errorf("logged %d times, want once:\n%s", n, h.log)
+	}
+}
+
 // TestPryonCloseNeverHangs: Close runs on the config path. It must return in
 // bounded time whatever state the helper is in, and leave nothing behind
 // (checked by the harness). The clock stands still here, so no READY timeout
