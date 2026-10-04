@@ -18,6 +18,7 @@ needs to travel with it.
 |---|---|---|---|
 | SpeexDSP (acoustic echo canceller) | `device/internal/aec/` | BSD-3-Clause | Xiph.Org Foundation, Jean-Marc Valin, Analog Devices, CSIRO |
 | ONNX Runtime C API header | `device/internal/wakeword/ort/include/` | MIT | Microsoft |
+| Pryon C API declarations (subset, no Amazon code) | `device/tools/pryon_wake/pryon_api.h` | MIT | Julian Imhof (echo-dot-assist) |
 | aioesphomeapi protocol buffers | `controller/esphome/vendor/` | MIT | Otto Winter |
 | Home Assistant Voice PE timer sound (`timer_finished.flac`) | `controller/sounds/` | CC BY 4.0 | Clayton Charles Tapp |
 
