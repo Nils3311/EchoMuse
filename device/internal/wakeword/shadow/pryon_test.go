@@ -760,15 +760,17 @@ func TestPryonLongRunResetsTheCrashSeries(t *testing.T) {
 	}
 }
 
-// TestPryonForeignSIGKILLIsNotACrash: the OOM killer or the parent-death
-// signal is not Pryon's fault and must not walk the engine to openWakeWord.
-func TestPryonForeignSIGKILLIsNotACrash(t *testing.T) {
+// TestPryonForeignSIGKILLCountsAsACrash: a helper SIGKILLed by someone else
+// within a minute of starting — on Android typically the low-memory killer —
+// counts like any other crash. Not counting it let a helper that is killed
+// over and over restart forever, deaf in every backoff, and never fail over.
+func TestPryonForeignSIGKILLCountsAsACrash(t *testing.T) {
 	h := newHarness(t, "")
 	h.ready()
 	_ = h.push(command(cmdSIGKILL, 0, 0))
 	h.until("the kill", func() bool { return h.e.p == nil })
-	if h.e.crashStreak != 0 || h.e.restarts != 1 {
-		t.Fatalf("streak %d restarts %d", h.e.crashStreak, h.e.restarts)
+	if h.e.crashStreak != 1 || h.e.restarts != 1 {
+		t.Fatalf("streak %d restarts %d, want 1 1", h.e.crashStreak, h.e.restarts)
 	}
 }
 

@@ -124,8 +124,7 @@ const (
 
 // pryonBackoff is the delay before restarting a helper that exited, indexed by
 // how many restarts there have been since the last helper that ran for
-// pryonLongRun. Separate from the crash count: an exit that does not count
-// towards giving up (a SIGKILL nobody here sent) still backs off.
+// pryonLongRun.
 var pryonBackoff = []time.Duration{
 	1 * time.Second, 2 * time.Second, 4 * time.Second,
 	8 * time.Second, 16 * time.Second, 30 * time.Second,
@@ -747,7 +746,7 @@ func (e *pryonEngine) start(now time.Time) error {
 	e.hold.left = 0
 	e.resetPending = false
 	if err != nil {
-		e.crashed(now, 0, fmt.Sprintf("did not start: %v", err), true)
+		e.crashed(now, 0, fmt.Sprintf("did not start: %v", err))
 		return err
 	}
 	e.p = p
@@ -758,11 +757,14 @@ func (e *pryonEngine) start(now time.Time) error {
 }
 
 // crashed applies the restart policy after a helper ended (or failed to
-// start). counted says whether it counts towards giving up.
-func (e *pryonEngine) crashed(at time.Time, uptime time.Duration, why string, counted bool) {
+// start). Every death within pryonLongRun of the start counts towards giving
+// up, whoever caused it: a SIGKILL from Android's low-memory killer included.
+// Leaving those out let a helper that is killed again and again restart
+// forever, deaf in every backoff, without ever falling back to openWakeWord.
+func (e *pryonEngine) crashed(at time.Time, uptime time.Duration, why string) {
 	if uptime >= pryonLongRun {
 		e.crashStreak, e.backoffIdx = 0, 0
-	} else if counted {
+	} else {
 		e.crashStreak++
 	}
 	if e.crashStreak >= pryonMaxCrashes {
@@ -830,11 +832,7 @@ func (e *pryonEngine) handleExit(p *pryonProc) {
 		// Pryon there is no point in five more tries.
 		e.failover(p.killReason)
 	default:
-		// A SIGKILL nobody here sent is the parent-death signal or the OOM
-		// killer, not a fault of Pryon's: restart, but do not count it
-		// towards giving up (review B11).
-		counted := p.killedByUs || !killedBySIGKILL(p.exitErr)
-		e.crashed(p.exitAt, uptime, why, counted)
+		e.crashed(p.exitAt, uptime, why)
 	}
 }
 
@@ -852,15 +850,6 @@ func describeExit(p *pryonProc) string {
 		fmt.Fprintf(&b, " (E %s)", p.lastE)
 	}
 	return b.String()
-}
-
-func killedBySIGKILL(err error) bool {
-	var ee *exec.ExitError
-	if !errors.As(err, &ee) {
-		return false
-	}
-	ws, ok := ee.Sys().(syscall.WaitStatus)
-	return ok && ws.Signaled() && ws.Signal() == syscall.SIGKILL
 }
 
 // drain takes everything the helper has said so far. discard drops wakes and
