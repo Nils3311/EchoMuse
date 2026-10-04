@@ -1039,6 +1039,17 @@ func (e *pryonEngine) Score() (float32, time.Time, error) {
 		return e.inner.Score()
 	}
 	if e.hold.left > 0 {
+		// Checked again on the way out, not only when the line arrived: Score
+		// runs only for frames the helper accepted, so while it is behind a
+		// held wake can sit here for seconds and would then open a session
+		// on audio the listen gate no longer has.
+		if age := e.now().Sub(e.hold.at); age > e.staleAfter {
+			e.hold.left = 0
+			e.win.stale++
+			e.logf("[pryon] held wake %dms old, dropped (limit %dms)",
+				age.Milliseconds(), e.staleAfter.Milliseconds())
+			return 0, e.lastAt, nil
+		}
 		e.hold.left--
 		return e.hold.score, e.hold.at, nil
 	}

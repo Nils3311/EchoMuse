@@ -638,6 +638,22 @@ func TestPryonOldWakeIsDropped(t *testing.T) {
 	}
 }
 
+// TestPryonHeldWakeExpires: a wake taken in fresh but delivered late — the
+// helper was behind, so no frame got as far as Score — is just as stale.
+func TestPryonHeldWakeExpires(t *testing.T) {
+	h := newHarness(t, "")
+	h.ready()
+	for i := 0; i < 4; i++ {
+		_ = h.push(silence())
+	}
+	_ = h.push(command(cmdWake, h.e.fed, 0.95))
+	h.until("a held wake", func() bool { return h.e.hold.left > 0 })
+	h.clk.Add(2 * time.Second)
+	if s, _, _ := h.e.Score(); s != 0 || h.e.win.stale != 1 || h.e.hold.left != 0 {
+		t.Fatalf("score %v stale %d held %d after 2s", s, h.e.win.stale, h.e.hold.left)
+	}
+}
+
 // TestPryonNearMissesAndOtherKeywordsNeverScore: a near miss can carry 0.8,
 // which would clear openWakeWord's 0.5; STOP from a television must not wake.
 func TestPryonNearMissesAndOtherKeywordsNeverScore(t *testing.T) {
