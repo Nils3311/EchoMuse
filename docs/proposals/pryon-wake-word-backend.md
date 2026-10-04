@@ -295,6 +295,14 @@ push-to-talk turns, and `micGainDb` is at its default of 24 dB. This is
 unrelated to the wake word engine and not changed here; it would be its own
 issue. I have not measured whether it affects transcription.
 
+A follow-up on the same device: with `micGainDb` raised to 36 dB, noise
+suppression and echo cancel switched on, four stored recordings showed a
+noise floor of -59 to -63 dBFS, a speech-to-noise gap of 30 to 41 dB, and
+peaks up to about -6 dBFS without clipped samples. The transcripts of those
+turns looked complete to the user, with no cut-off start. Gain, denoiser and
+echo cancel were changed together, so their individual effects are not
+separated, and this is one user's judgement of four turns.
+
 ## 8. Legal, licensing, privacy
 
 - `libpryon.so` and its models belong to Amazon. **Nothing from Amazon is in
