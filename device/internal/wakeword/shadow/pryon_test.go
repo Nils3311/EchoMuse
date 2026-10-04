@@ -453,15 +453,22 @@ func TestPryonNotReadyUntilREADY(t *testing.T) {
 }
 
 // TestPryonReadyTimeoutFallsBack: a first helper that never says READY is
-// killed after 5s (by the injected clock) and the engine moves to
-// openWakeWord at once — a device that cannot start Pryon should not spend
-// five more tries finding out.
+// killed and the engine moves to openWakeWord at once — but only after the
+// generous first-start allowance (pryonFirstReadyTimeout), because right
+// after boot dlopen, the model load and the warm-up compete with everything
+// else for the CPU, and 5s is too tight to judge Pryon by.
 func TestPryonReadyTimeoutFallsBack(t *testing.T) {
 	h := newHarness(t, "noready")
-	_ = h.push(silence())
-	h.clk.Add(pryonReadyTimeout)
+	p := h.e.p
+	_ = h.e.Push(silence(), h.clk.Add(pryonReadyTimeout))
+	time.Sleep(50 * time.Millisecond)
+	_ = h.e.Push(silence(), h.clk.Now())
+	if h.e.failing || h.e.p != p || p.killedByUs {
+		t.Fatalf("first helper given up on after %v, before the first-start allowance", pryonReadyTimeout)
+	}
+	h.clk.Add(pryonFirstReadyTimeout - pryonReadyTimeout)
 	h.until("failover to openWakeWord", func() bool { return h.e.inner != nil })
-	if !strings.Contains(h.e.Info(), "no READY within 5s") || !strings.Contains(h.e.Info(), "fake oww") {
+	if !strings.Contains(h.e.Info(), "no READY within 20s") || !strings.Contains(h.e.Info(), "fake oww") {
 		t.Errorf("Info = %q", h.e.Info())
 	}
 	_ = h.push(silence())
@@ -471,6 +478,26 @@ func TestPryonReadyTimeoutFallsBack(t *testing.T) {
 	h.fb.mu.Unlock()
 	if h.log.count("giving up on Pryon") != 1 {
 		t.Errorf("failover not logged exactly once:\n%s", h.log)
+	}
+}
+
+// TestPryonLaterReadyTimeoutIsACrash: once a helper has been ready, a
+// restarted one gets the normal 5s, and missing it is a crash, not a
+// failover.
+func TestPryonLaterReadyTimeoutIsACrash(t *testing.T) {
+	h := newHarness(t, "")
+	h.ready()
+	_ = h.push(command(cmdCrash, 0, 0))
+	h.until("the crash", func() bool { return h.e.p == nil })
+	t.Setenv("FAKE_PRYON", "noready") // the restarted helper never gets ready
+	_ = h.e.Push(silence(), h.clk.Add(time.Second))
+	if h.e.p == nil {
+		t.Fatal("not restarted")
+	}
+	h.clk.Add(pryonReadyTimeout)
+	h.until("the second crash", func() bool { return h.e.p == nil })
+	if h.e.failing || h.e.crashStreak != 2 {
+		t.Fatalf("failing=%v streak=%d", h.e.failing, h.e.crashStreak)
 	}
 }
 

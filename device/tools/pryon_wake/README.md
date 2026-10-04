@@ -61,9 +61,13 @@ and prints the same lines as in service.
 The server picks Pryon for any model whose name starts with `pryon_`. If
 Pryon cannot run, the server uses openWakeWord with that same
 `pryon_alexa.onnx`, which is a working Alexa model. That happens when the
-helper, library or manifest is missing, when the first helper never says
-`READY` within 5 s (later on that counts as a crash), on a fatal error line,
-or after 5 crashes in a row. The server
+helper, library or manifest is missing, when no helper has said `READY`
+within 20 s of the first start (generous for a cold boot; a restarted helper
+gets 5 s, and missing that counts as a crash), on a fatal error line, or
+after 5 crashes in a row. Pryon is only started where openWakeWord's runtime
+and models are installed, so the fallback can take over; if they are not,
+the device reports degraded, as it does today. Once on openWakeWord, the
+device stays there until the model changes or the server restarts. The server
 log names the engine and, if it fell back, the reason. Lines from the helper
 start with `[pryon]`, including one every 30 s with `cpu=`, `accepts=`,
 `nearMiss=`, `restarts=`, `drops=`, `stale=` and the latency from word end
@@ -75,7 +79,8 @@ to detection.
 Settings (environment): `EM_PRYON_HELPER`, `EM_PRYON_LIB`, `EM_PRYON_MANIFEST`,
 `EM_PRYON_WARMUP_MS` (3000), `EM_PRYON_RESET` (0: a mic restart is ignored by
 the decoder; 1: the decoder session restarts and warms up again),
-`EM_PRYON_AT_OFFSET_FRAMES` (3; see `wakeAt` in `pryon.go`).
+`EM_PRYON_AT_OFFSET_FRAMES` (3; see `wakeAt` in `pryon.go`),
+`EM_PRYON_READY_TIMEOUT_MS` (20000, the first start only).
 
 ## Protocol (version 1)
 

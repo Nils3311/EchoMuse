@@ -217,7 +217,7 @@ func TestOpenLeavesOtherModelsAlone(t *testing.T) {
 
 func TestPryonConfigFromEnvironment(t *testing.T) {
 	for _, k := range []string{"EM_PRYON_HELPER", "EM_PRYON_LIB", "EM_PRYON_MANIFEST",
-		"EM_PRYON_WARMUP_MS", "EM_PRYON_RESET", "EM_PRYON_AT_OFFSET_FRAMES"} {
+		"EM_PRYON_WARMUP_MS", "EM_PRYON_RESET", "EM_PRYON_AT_OFFSET_FRAMES", "EM_PRYON_READY_TIMEOUT_MS"} {
 		t.Setenv(k, "")
 	}
 	cfg, err := pryonConfigFor("pryon_alexa")
@@ -226,7 +226,7 @@ func TestPryonConfigFromEnvironment(t *testing.T) {
 	}
 	want := pryonConfig{Helper: DefaultPryonHelper, Lib: DefaultPryonLib,
 		Manifest: "/system/local/models/keyword/en-US/ALEXA/pryon.manifest",
-		WarmupMs: 3000, ResetMode: 0, AtOffsetFrames: 3}
+		WarmupMs: 3000, ResetMode: 0, AtOffsetFrames: 3, FirstReadyMs: 20000}
 	if cfg != want {
 		t.Errorf("defaults %+v, want %+v", cfg, want)
 	}
@@ -237,8 +237,10 @@ func TestPryonConfigFromEnvironment(t *testing.T) {
 	t.Setenv("EM_PRYON_WARMUP_MS", "1500")
 	t.Setenv("EM_PRYON_RESET", "1")
 	t.Setenv("EM_PRYON_AT_OFFSET_FRAMES", "4")
+	t.Setenv("EM_PRYON_READY_TIMEOUT_MS", "45000")
 	cfg, err = pryonConfigFor("pryon_hey_computer")
-	if err != nil || cfg.Manifest != "/m" || cfg.WarmupMs != 1500 || cfg.ResetMode != 1 || cfg.AtOffsetFrames != 4 {
+	if err != nil || cfg.Manifest != "/m" || cfg.WarmupMs != 1500 || cfg.ResetMode != 1 || cfg.AtOffsetFrames != 4 ||
+		cfg.FirstReadyMs != 45000 {
 		t.Errorf("overrides: %+v %v", cfg, err)
 	}
 	t.Setenv("EM_PRYON_WARMUP_MS", "soon")
