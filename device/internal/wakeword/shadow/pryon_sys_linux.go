@@ -14,8 +14,9 @@ import "syscall"
 // thread while the server lives on (nothing in the device code locks threads,
 // so it does not in practice). The first line is stdin EOF, which ends the
 // helper whenever the server's end of the pipe closes, and the helper sets
-// PR_SET_PDEATHSIG on itself as well. A SIGKILL this engine did not send is
-// therefore restarted without counting as a crash.
+// PR_SET_PDEATHSIG on itself as well. Should a retired thread ever kill a
+// helper this way, it counts as a crash like any other early death; five of
+// them in a row would fall back to openWakeWord, not leave the device deaf.
 func pryonSysProcAttr() *syscall.SysProcAttr {
 	return &syscall.SysProcAttr{Setpgid: true, Pdeathsig: syscall.SIGKILL}
 }
