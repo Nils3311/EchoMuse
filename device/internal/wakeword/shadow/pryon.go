@@ -423,6 +423,8 @@ type pryonEngine struct {
 	firstReadyAfter time.Duration
 	stderr          lineLimiter
 	stdoutJunk      lineLimiter
+	// badScoreLog limits the log line about W lines with an unusable score.
+	badScoreLog lineLimiter
 
 	p           *pryonProc
 	everReady   bool
@@ -476,8 +478,8 @@ type pryonEngine struct {
 	restarts  uint64
 	lastStats time.Time
 	win       struct {
-		accepts, nearMiss, drops, stale, foreign uint64
-		lat                                      []time.Duration
+		accepts, nearMiss, drops, stale, foreign, badScore uint64
+		lat                                                []time.Duration
 	}
 	cpuPid   int
 	cpuTicks uint64
@@ -509,6 +511,7 @@ func newPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, error
 	}
 	e.stderr.perMinute = pryonStderrPerMinute
 	e.stdoutJunk.perMinute = 5
+	e.badScoreLog.perMinute = 5
 	e.setInfo(fmt.Sprintf("pryon, model %s, manifest %s, warm-up %dms, reset R%d, at-offset %d frames",
 		stem, cfg.Manifest, cfg.WarmupMs, cfg.ResetMode, cfg.AtOffsetFrames))
 	return e
@@ -920,9 +923,19 @@ func (e *pryonEngine) wake(ev pryonEvent, now time.Time) {
 		return
 	}
 	score := ev.score
-	if score < 0 || score > 1 {
-		// -1: the library's score line was not seen. The wake was still
-		// accepted by Pryon's own threshold, so report it as certain.
+	// Written as "not inside" so NaN, which compares false with everything,
+	// lands here too: passed on, it would silently never cross.
+	if !(score >= 0 && score <= 1) {
+		// -1: the library's score line was not seen. Anything else here (NaN,
+		// Inf, out of range) is a score the helper could not read. Either
+		// way the wake was accepted by Pryon's own threshold, so it is
+		// reported as certain.
+		if score != -1 {
+			e.win.badScore++
+			if ok, _ := e.badScoreLog.allow(now); ok {
+				e.logf("[pryon] wake with an unusable score %v, reported as 1", score)
+			}
+		}
 		score = 1
 	}
 	e.hold.score, e.hold.at, e.hold.left = score, f.at, pryonHoldFrames
@@ -1204,13 +1217,16 @@ func (e *pryonEngine) maybeStats(now time.Time) {
 	if w.foreign > 0 {
 		fmt.Fprintf(&b, " foreign=%d", w.foreign)
 	}
+	if w.badScore > 0 {
+		fmt.Fprintf(&b, " badScore=%d", w.badScore)
+	}
 	if p := e.p; p != nil {
 		if lost := p.lost.Swap(0); lost > 0 {
 			fmt.Fprintf(&b, " lost=%d", lost)
 		}
 	}
 	e.logf("%s", b.String())
-	e.win.accepts, e.win.nearMiss, e.win.drops, e.win.stale, e.win.foreign = 0, 0, 0, 0, 0
+	e.win.accepts, e.win.nearMiss, e.win.drops, e.win.stale, e.win.foreign, e.win.badScore = 0, 0, 0, 0, 0, 0
 	e.win.lat = e.win.lat[:0]
 	e.lastStats = now
 }
