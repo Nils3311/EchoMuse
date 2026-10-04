@@ -224,6 +224,13 @@ type harness struct {
 // cleanup closes it and proves that nothing it started is still running.
 func newHarness(t *testing.T, mode string) *harness {
 	t.Helper()
+	return newHarnessWith(t, mode, nil)
+}
+
+// newHarnessWith is newHarness with the helper configuration adjusted, e.g. to
+// run the real pryon_wake instead of the fake.
+func newHarnessWith(t *testing.T, mode string, adjust func(*pryonConfig)) *harness {
+	t.Helper()
 	t.Setenv("GO_WANT_HELPER", "1")
 	t.Setenv("FAKE_PRYON", mode)
 	// A -race helper otherwise sleeps 1s on exit (atexit_sleep_ms), which
@@ -233,6 +240,9 @@ func newHarness(t *testing.T, mode string) *harness {
 	h := &harness{t: t, clk: newFakeClock(), log: &logSink{}, fb: &fakeEngine{}}
 	cfg := pryonConfig{Helper: os.Args[0], Lib: "/fake/libpryon.so", Manifest: "/fake/pryon.manifest",
 		AtOffsetFrames: DefaultPryonAtOffsetFrames}
+	if adjust != nil {
+		adjust(&cfg)
+	}
 	h.e = newPryonEngine("pryon_alexa", cfg, func() (engine, error) {
 		h.mu.Lock()
 		h.fbN++
