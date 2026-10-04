@@ -76,24 +76,50 @@ func Open(owwModel string, threshold float32, onCross func(score, threshold floa
 // for ONNX Runtime, which a host running the tests does not have.
 var openOWW = openOWWEngine
 
-// openOWWEngine loads ONNX Runtime and the three models for stem.
-func openOWWEngine(dir, stem string) (*owwEngine, error) {
-	models := ort.Models{
+func owwModels(dir, stem string) ort.Models {
+	return ort.Models{
 		Melspec:    filepath.Join(dir, "melspectrogram.onnx"),
 		Embedding:  filepath.Join(dir, "embedding_model.onnx"),
 		Classifier: filepath.Join(dir, stem+".onnx"),
 	}
-	// Checked up front so the log names the missing file. ORT's own error for a
-	// bad path mentions neither which of the three it was nor what was expected
-	// there, and this is a path people will get wrong while installing by hand.
+}
+
+// checkOWWModels is checked up front so the log names the missing file. ORT's
+// own error for a bad path mentions neither which of the three it was nor what
+// was expected there, and this is a path people will get wrong while
+// installing by hand.
+func checkOWWModels(models ort.Models) error {
 	for what, p := range map[string]string{
 		"melspectrogram model": models.Melspec,
 		"embedding model":      models.Embedding,
 		"classifier model":     models.Classifier,
 	} {
 		if _, err := os.Stat(p); err != nil {
-			return nil, fmt.Errorf("shadow: %s not installed at %s", what, p)
+			return fmt.Errorf("shadow: %s not installed at %s", what, p)
 		}
+	}
+	return nil
+}
+
+// checkOWW is the cheap part of openOWWEngine: are the runtime and the three
+// models there. Pryon is only started where this holds, so that openWakeWord
+// can actually take over when Pryon fails at run time (see openWithPryon).
+func checkOWW(dir, stem string) error {
+	if err := checkOWWModels(owwModels(dir, stem)); err != nil {
+		return err
+	}
+	lib := filepath.Join(dir, "libonnxruntime.so")
+	if _, err := os.Stat(lib); err != nil {
+		return fmt.Errorf("shadow: onnxruntime not installed at %s", lib)
+	}
+	return nil
+}
+
+// openOWWEngine loads ONNX Runtime and the three models for stem.
+func openOWWEngine(dir, stem string) (*owwEngine, error) {
+	models := owwModels(dir, stem)
+	if err := checkOWWModels(models); err != nil {
+		return nil, err
 	}
 
 	lib := filepath.Join(dir, "libonnxruntime.so")

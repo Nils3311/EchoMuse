@@ -195,6 +195,18 @@ func openPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, erro
 // otherwise openWakeWord on the same <stem>.onnx, with the reason in Info.
 func openWithPryon(dir, stem string, threshold float32,
 	onCross func(score, threshold float32, at time.Time)) (*Scorer, error) {
+	// openWakeWord first: it is what a Pryon failure at run time falls back
+	// to, in the background, long after this call has returned. Without it a
+	// failover would leave a loaded scorer that never scores — a deaf device
+	// still reporting "local" — where today's error reports "degraded". So
+	// where openWakeWord could not run, Pryon is not started either, and the
+	// error is today's. Only a cheap check: actually loading ORT here would
+	// cost 12MB for an engine that may never be used. A runtime that is
+	// present but does not load is the one case still caught only at failover
+	// (the scorer then reports every frame as an error).
+	if err := checkOWW(dir, stem); err != nil {
+		return nil, err
+	}
 	var reason string
 	if off, why := pryonDisabled(); off {
 		reason = "disabled: " + why

@@ -54,6 +54,13 @@ func pryonFiles(t *testing.T) (lib, manifest string) {
 	t.Setenv("FAKE_PRYON", "")
 	t.Setenv("GORACE", "atexit_sleep_ms=0")
 	t.Setenv("EM_PRYON", "")
+	// openWakeWord's files, which Open requires before it starts Pryon.
+	oww := filepath.Join(dir, "oww")
+	os.MkdirAll(oww, 0o755)
+	for _, f := range []string{"libonnxruntime.so", "melspectrogram.onnx", "embedding_model.onnx", "pryon_alexa.onnx", "alexa_v0.1.onnx", "hey_pryon.onnx"} {
+		os.WriteFile(filepath.Join(oww, f), nil, 0o644)
+	}
+	t.Setenv("EM_OWW_DIR", oww)
 	old := pryonKillSwitch
 	pryonKillSwitch = filepath.Join(dir, "no_pryon")
 	t.Cleanup(func() { pryonKillSwitch = old })
@@ -141,6 +148,35 @@ func TestOpenFallsBackToOpenWakeWord(t *testing.T) {
 			}
 			if c.name == "switched off by file" && !strings.Contains(info, pryonKillSwitch+" exists") {
 				t.Errorf("Info = %q does not name the kill switch file", info)
+			}
+		})
+	}
+}
+
+// TestOpenNeedsTheFallbackFirst: Pryon is only started where openWakeWord
+// could take over. If the fallback's files are missing, a later failover
+// would leave a loaded scorer that never scores — deaf, but reported as
+// "local". Refusing up front gives today's error, and the device reports
+// degraded as it always did.
+func TestOpenNeedsTheFallbackFirst(t *testing.T) {
+	stubOWW(t, nil)
+	pryonFiles(t)
+	for _, missing := range []string{"libonnxruntime.so", "melspectrogram.onnx", "embedding_model.onnx", "pryon_alexa.onnx"} {
+		t.Run(missing, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, f := range []string{"libonnxruntime.so", "melspectrogram.onnx", "embedding_model.onnx", "pryon_alexa.onnx"} {
+				if f != missing {
+					os.WriteFile(filepath.Join(dir, f), nil, 0o644)
+				}
+			}
+			t.Setenv("EM_OWW_DIR", dir)
+			s, err := Open(pryonModelPath, 0.5, nil)
+			if err == nil {
+				s.Close()
+				t.Fatalf("Open started %q without %s for the fallback", s.Info(), missing)
+			}
+			if !strings.Contains(err.Error(), filepath.Join(dir, missing)) {
+				t.Errorf("error %q does not name %s", err, missing)
 			}
 		})
 	}
