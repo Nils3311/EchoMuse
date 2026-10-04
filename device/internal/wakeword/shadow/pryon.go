@@ -523,8 +523,27 @@ func (e *pryonEngine) spawn(now time.Time) (*pryonProc, error) {
 	cmd.SysProcAttr = pryonSysProcAttr()
 
 	// Plain os.Pipe rather than cmd.*Pipe: Wait must not depend on the readers
-	// having finished, and the readers must not depend on Wait. The pipes are
-	// close-on-exec in this process; the child gets only its three ends.
+	// having finished, and the readers must not depend on Wait. These pipes
+	// are close-on-exec, and the child is GIVEN only its three ends.
+	//
+	// That is not all it gets. exec closes only descriptors marked
+	// FD_CLOEXEC; every other one the server holds survives into the child.
+	// The microphone's PCM descriptor is such a one (opened by tinyalsa's C
+	// open() without O_CLOEXEC; the dashboard terminal's shells inherit it
+	// too), and pcm_open blocks while any process holds the PCM. The only
+	// protection is pryon_wake's first statement, close_inherited_fds()
+	// (TestHelperInheritsNonCloexecFds pins the inheritance,
+	// TestRealHelperClosesInheritedFds the cleanup). Its known gaps:
+	//   - it closes fds 3..1023 only. The Go runtime raises the soft
+	//     RLIMIT_NOFILE at start, so a server fd above 1023 is possible in
+	//     principle; the PCM is opened early and gets a low number.
+	//   - between exec and that statement the dynamic loader and libc
+	//     initialisation run with the descriptor held: microseconds, and a
+	//     server that dies in them takes the helper with it (Pdeathsig).
+	//   - EM_PRYON_HELPER pointing at a wrapper script defeats it: the shell
+	//     holds the PCM for as long as it lives.
+	// The real fix is FD_CLOEXEC on the PCM descriptor in bindings/mic, which
+	// would also stop the terminal's shells inheriting it.
 	inR, inW, err := os.Pipe()
 	if err != nil {
 		return nil, err

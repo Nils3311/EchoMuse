@@ -106,6 +106,15 @@ detects, is filtered out.
   `pryon_api.h` is a reverse-engineered subset (MIT, from echo-dot-assist).
 - Only the en-US ALEXA model is mapped (`pryon_alexa`). For any other model,
   set `EM_PRYON_MANIFEST`.
+- **Inherited descriptors.** The server's microphone descriptor is opened
+  without close-on-exec, so every child the server starts, this helper
+  included, inherits it. While anyone holds it, the next server cannot open
+  the microphone. `pryon_wake` closes fds 3–1023 as its very first statement,
+  before loading anything. That leaves three gaps: a descriptor numbered
+  1024 or higher, the microseconds between `exec` and that statement, and a
+  wrapper script set as `EM_PRYON_HELPER` (the shell keeps the microphone).
+  Do not use a wrapper. The proper fix is close-on-exec on the PCM
+  descriptor in the server.
 - **Privacy: nobody has checked whether `libpryon.so` itself sends anything
   over the network.** The library imports `socket`/`connect`. Before relying
   on "On this Echo" as private listening, check the running helper for
