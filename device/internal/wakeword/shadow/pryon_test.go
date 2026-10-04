@@ -1058,3 +1058,27 @@ wait:
 		t.Fatalf("%d crossings, want 1", st.Crossings)
 	}
 }
+
+// TestScorerIsNotReadyWhileTheHelperIsDown: Scorer.Ready is what the server's
+// stats report. A helper that crashed and waits out its backoff scores
+// nothing, and the scorer must say so rather than keep the "ready" it had
+// before the crash.
+func TestScorerIsNotReadyWhileTheHelperIsDown(t *testing.T) {
+	h := newHarness(t, "")
+	s := newScorer(h.e, 0.5, nil)
+	defer s.Close()
+	pushOne := func(pcm []int16) {
+		t.Helper()
+		before := s.processed()
+		b := make([]byte, 2*len(pcm))
+		for i, v := range pcm {
+			b[2*i], b[2*i+1] = byte(uint16(v)), byte(uint16(v)>>8)
+		}
+		s.PushBytesAt(b, h.clk.Now())
+		waitFor(t, "a frame to be scored", func() bool { return s.processed() > before })
+	}
+	waitFor(t, "the scorer to be ready", func() bool { pushOne(silence()); return s.Ready() })
+	pushOne(command(cmdCrash, 0, 0))
+	// The clock stands still: the restart (1s backoff) never comes.
+	waitFor(t, "the scorer to report not ready", func() bool { pushOne(silence()); return !s.Ready() })
+}
