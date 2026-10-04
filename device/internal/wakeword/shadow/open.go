@@ -60,7 +60,19 @@ func Open(owwModel string, threshold float32, onCross func(score, threshold floa
 	if stem == "" {
 		return nil, fmt.Errorf("shadow: no wake word model configured")
 	}
+	eng, err := openOWW(dir, stem)
+	if err != nil {
+		return nil, err
+	}
+	return newScorer(eng, threshold, onCross), nil
+}
 
+// openOWW is the openWakeWord loader. A variable only so tests can stand in
+// for ONNX Runtime, which a host running the tests does not have.
+var openOWW = openOWWEngine
+
+// openOWWEngine loads ONNX Runtime and the three models for stem.
+func openOWWEngine(dir, stem string) (*owwEngine, error) {
 	models := ort.Models{
 		Melspec:    filepath.Join(dir, "melspectrogram.onnx"),
 		Embedding:  filepath.Join(dir, "embedding_model.onnx"),
@@ -89,9 +101,9 @@ func Open(owwModel string, threshold float32, onCross func(score, threshold floa
 		return nil, fmt.Errorf("shadow: %w", err)
 	}
 
-	s := NewScorer(inf, threshold, onCross)
-	s.closer = inf
-	s.info = fmt.Sprintf("onnxruntime %s, model %s, xnnpack=%v",
+	eng := newOWWEngine(inf)
+	eng.closer = inf
+	eng.info = fmt.Sprintf("onnxruntime %s, model %s, xnnpack=%v",
 		rt.Version(), stem, inf.XNNPACKActive())
-	return s, nil
+	return eng, nil
 }

@@ -23,7 +23,6 @@ package shadow
 
 import (
 	"fmt"
-	"io"
 	"log"
 	"strings"
 	"sync"
@@ -93,9 +92,11 @@ type Stats struct {
 	MaxGapMs   uint32
 }
 
-// Scorer runs a Detector over pushed audio on its own goroutine.
+// Scorer runs a wake word engine over pushed audio on its own goroutine.
 type Scorer struct {
-	det       *wakeword.Detector
+	// eng does the detection: openWakeWord (owwEngine) or Pryon. It belongs to
+	// the scorer goroutine, like the Detector it replaced.
+	eng       engine
 	threshold float32
 	// bargeThreshold is used instead of threshold while the speaker is
 	// streaming, mirroring the controller's own effective threshold. Zero
@@ -118,13 +119,6 @@ type Scorer struct {
 	// `ch` is never closed — a send into a buffered channel nobody reads is
 	// harmless — but it stops a dead scorer silently accruing drop counts.
 	closed atomic.Bool
-
-	// closer releases the inference engine, when one owns resources (the ORT
-	// sessions). Nil for an injected Inferer, e.g. in tests.
-	closer io.Closer
-	// info describes the loaded engine for logging: runtime version, model,
-	// whether XNNPACK attached. Set once at construction, never mutated.
-	info string
 
 	// Maxima are atomics rather than mutex-guarded state because they are
 	// written on the two hot paths: the mic goroutine (gap) and the scorer
@@ -239,8 +233,14 @@ func (s *Scorer) traceFrame(score, bar float32, crossed bool) {
 // speaker was streaming at the instant the frame was SCORED, and by the time a
 // callback asks, playback may have ended.
 func NewScorer(inf wakeword.Inferer, threshold float32, onCross func(score, threshold float32, at time.Time)) *Scorer {
+	return newScorer(newOWWEngine(inf), threshold, onCross)
+}
+
+// newScorer starts a scorer on any engine. NewScorer keeps its signature for
+// the callers and tests that inject an Inferer; Open picks the engine.
+func newScorer(eng engine, threshold float32, onCross func(score, threshold float32, at time.Time)) *Scorer {
 	s := &Scorer{
-		det:       wakeword.New(inf),
+		eng:       eng,
 		threshold: threshold,
 		refract:   DefaultRefractory,
 		onCross:   onCross,
@@ -400,7 +400,7 @@ func (s *Scorer) TakeBargeWindow() (peak, bar float32, frames uint64) {
 }
 
 // Info describes the loaded inference engine, for a log line at startup.
-func (s *Scorer) Info() string { return s.info }
+func (s *Scorer) Info() string { return s.eng.Info() }
 
 // Close stops the scorer goroutine and releases the inference engine. Safe to
 // call more than once: it runs both on a config change and at shutdown, and
@@ -411,9 +411,7 @@ func (s *Scorer) Close() {
 		close(s.quit)
 		<-s.done
 		// After the goroutine has exited, so no inference is in flight.
-		if s.closer != nil {
-			_ = s.closer.Close()
-		}
+		_ = s.eng.Close()
 	})
 }
 
@@ -436,7 +434,7 @@ func (s *Scorer) run() {
 		s.mu.Unlock()
 
 		if reset {
-			s.det.Reset()
+			s.eng.Reset()
 			s.mu.Lock()
 			s.ready = false
 			s.prevAbove = false
@@ -445,11 +443,11 @@ func (s *Scorer) run() {
 		}
 
 		t0 := time.Now()
-		if _, err := s.det.Push(pcm); err != nil {
+		if err := s.eng.Push(pcm, q.at); err != nil {
 			s.recordErr(err)
 			continue
 		}
-		if !s.det.Ready() {
+		if !s.eng.Ready() {
 			s.mu.Lock()
 			s.stats.Frames++
 			s.stats.NotReady++
@@ -459,7 +457,9 @@ func (s *Scorer) run() {
 		s.mu.Lock()
 		s.ready = true
 		s.mu.Unlock()
-		score, err := s.det.Score()
+		// at is the capture time the score refers to: the frame just pushed for
+		// openWakeWord, the audio the detection was in for Pryon.
+		score, at, err := s.eng.Score()
 		if err != nil {
 			s.recordErr(err)
 			continue
@@ -498,7 +498,7 @@ func (s *Scorer) run() {
 		s.mu.Unlock()
 
 		if crossed && s.onCross != nil {
-			s.onCross(score, threshold, q.at)
+			s.onCross(score, threshold, at)
 		}
 	}
 }
