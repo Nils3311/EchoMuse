@@ -135,7 +135,7 @@ func checkPryon(cfg pryonConfig) error {
 // from before it closed them, and pcm_open blocks while anyone holds the PCM —
 // the "deaf device and a hissing amplifier" incident. Only orphans, so a
 // helper someone started by hand from the dashboard terminal (whose parent is
-// that shell) is left alone (review C12). A no-op where /proc is not there.
+// that shell) is left alone. A no-op where /proc is not there.
 func killOrphanHelpers(base string, logf func(string, ...any)) int {
 	ents, err := os.ReadDir(procRoot)
 	if err != nil {
@@ -178,7 +178,7 @@ func killOrphanHelpers(base string, logf func(string, ...any)) int {
 // starts the helper. It returns as soon as the helper has been STARTED, not
 // when it is ready: Open runs on the control link's read loop, and waiting the
 // up to five seconds a helper may take to say READY would hold up pings and
-// listen_close behind it (review B10). The engine reports not ready until
+// listen_close behind it. The engine reports not ready until
 // READY arrives, and a helper that never says it is handled like a crash —
 // on the first start, by falling back to openWakeWord.
 func openPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, error)) (*pryonEngine, error) {

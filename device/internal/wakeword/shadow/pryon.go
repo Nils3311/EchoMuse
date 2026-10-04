@@ -61,7 +61,7 @@ const (
 	// the reason a fresh detection is lost.
 	pryonRingFrames = 64
 	// pryonWriterFrames bounds the frames in flight to the writer goroutine:
-	// 640ms, like the Scorer's queue. Kept short on purpose (review B13): the
+	// 640ms, like the Scorer's queue. Kept short on purpose: the
 	// listen gate rings only 2s, and a frame queued here, then in the pipe,
 	// then in the decoder, must still be in that ring when its detection
 	// comes back.
@@ -78,7 +78,7 @@ const (
 	// suppresses the second one.
 	pryonHoldFrames = 2
 	// pryonStaleAfter: a detection whose capture time is older than this when
-	// the scorer goroutine sees it is dropped (review B3). The listen gate
+	// the scorer goroutine sees it is dropped. The listen gate
 	// rings 2s of audio and a session starts with the frames AFTER `at`, so a
 	// much older `at` would open a session on whatever is left, and the
 	// arbitration age would be wrong by the same amount. 1.2s leaves room for
@@ -452,15 +452,14 @@ type pryonEngine struct {
 	}
 
 	// Sticky requests to the helper: retried on every frame until a send
-	// succeeds, so a full writer channel delays them rather than losing them
-	// (review C9).
+	// succeeds, so a full writer channel delays them rather than losing them.
 	playback     bool
 	propPending  bool
 	resetPending bool
 
 	// Failover to openWakeWord. fallback builds it — off the scorer goroutine,
 	// because it loads ONNX Runtime (12MB) and that would cost seconds of
-	// frames (review C8). inner is set once it is there.
+	// frames. inner is set once it is there.
 	fallback   func() (engine, error)
 	failing    bool
 	failReason string
@@ -1139,8 +1138,8 @@ func (e *pryonEngine) Score() (float32, time.Time, error) {
 }
 
 // Reset drops every wake that is held or queued, whatever the helper's reset
-// mode: a wake reported across a gap belongs to the audio before it (review
-// B3) — for example one that arrived just as the mic was muted, which would
+// mode: a wake reported across a gap belongs to the audio before it — for
+// example one that arrived just as the mic was muted, which would
 // otherwise open a session on the first frame after unmuting. Late arrivals
 // are caught by resetFed.
 func (e *pryonEngine) Reset() {
