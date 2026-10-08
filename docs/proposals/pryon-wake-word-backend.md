@@ -229,9 +229,10 @@ to 0.98. The logged helper CPU was 34 to 35%. In `pryon.go` that figure is the
 helper's user plus system time over the 30 s window as a percentage of **one
 core**, all threads together, so it is about 0.35 core, against 0.31 core in
 the replay of 6.3 (which included model load); both are single short
-measurements. The user reports it works "much better than before". That
-is an impression, not a measurement, and the reference setup was not
-recorded precisely.
+measurements. After a week of daily use in the same room the user reports that wake
+detection is clearly better than with openWakeWord, without a stability
+problem they noticed. That is an impression, not a measurement: no counts
+were kept, and the reference setup was not recorded precisely.
 
 ### 6.5 Not measured
 
@@ -309,8 +310,8 @@ separated, and this is one user's judgement of four turns.
   this repository**: no library, no model, no binary. The helper `dlopen`s the
   copy in the device's `/system`.
 - `pryon_api.h` is a subset of C declarations from the echo-dot-assist
-  project (MIT), listed in `NOTICE.md`. `CONTRIBUTING.md` also asks for the
-  licence text beside the code; that file is **not** added yet.
+  project (MIT), listed in `NOTICE.md`. The licence text sits beside it in
+  `device/tools/pryon_wake/LICENSE-echo-dot-assist`.
 - Whether calling an undocumented vendor library through its exports is
   acceptable for this project is for the maintainers to decide. This is not
   legal advice.
@@ -370,7 +371,7 @@ copy keeps working as an openWakeWord "Alexa" model.
    Pryon.
 7. Close the gaps from section 7 that need `server.go` or the mic binding:
    separate "session start" and "heard at" times (C7), `FD_CLOEXEC` on the PCM
-   descriptor, a protocol heartbeat (C6), the licence text.
+   descriptor, a protocol heartbeat (C6).
 8. Run the second review round and the false alarm measurement first. Most
    useful feedback meanwhile: a few hours in `shadow` mode with a television
    or radio running, other rooms or speakers, an Echo Dot 3rd gen.
