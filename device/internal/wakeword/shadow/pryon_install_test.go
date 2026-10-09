@@ -192,6 +192,7 @@ func TestOpenReportsFailedInstallInFallback(t *testing.T) {
 		t.Fatal(err)
 	}
 	openWithPryonInstalling(t, filepath.Join(blocker, "pryon_wake"))
+	t.Setenv("EM_PRYON_FALLBACK", "oww") // the fallback is opt-in
 	s, err := Open(pryonModelPath, 0.5, nil)
 	if err != nil {
 		t.Fatalf("Open: %v", err)

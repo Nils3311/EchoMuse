@@ -67,20 +67,36 @@ and prints the same lines as in service.
    Echo"** (or `shadow` to compare without acting). Pryon only runs where the
    device scores the wake stream. In "On the controller" mode nothing changes.
 
-The server picks Pryon for any model whose name starts with `pryon_`. If
-Pryon cannot run, the server uses openWakeWord with that same
-`pryon_alexa.onnx`, which is a working Alexa model. That happens when the
-helper, library or manifest is missing, when no helper has said `READY`
-within 20 s of the first start (generous for a cold boot; a restarted helper
-gets 5 s, and missing that counts as a crash), on a fatal error line, or
-after 5 crashes in a row. Pryon is only started where openWakeWord's runtime
-and models are installed, so the fallback can take over; if they are not,
-the device reports degraded, as it does today. Once on openWakeWord, the
-device stays there until the model changes or the server restarts. The server
-log names the engine and, if it fell back, the reason. Lines from the helper
-start with `[pryon]`, including one every 30 s with `cpu=`, `accepts=`,
-`nearMiss=`, `restarts=`, `drops=`, `stale=` and the latency from word end
-to detection.
+The server picks Pryon for any model whose name starts with `pryon_`.
+
+**No openWakeWord fallback (since v2.18.3).** If Pryon cannot run, the device
+does not quietly score with openWakeWord any more:
+
+- Missing helper, library or manifest at open: the open fails and the device
+  reports degraded, with the reason (`pryon unavailable: … (no openWakeWord
+  fallback …)`).
+- A helper that crashes, reports a fatal error or never says `READY` is
+  restarted on the backoff (1, 2, 4, 8, 16, then every 30 s), for good. The
+  device hears nothing while it is down, and says why in the log and the
+  scorer's last error.
+
+`EM_PRYON_FALLBACK=oww` restores the old behaviour: openWakeWord with the same
+`pryon_alexa.onnx` (a copy of `alexa_v0.1`) when the helper, library or
+manifest is missing, when no helper has said `READY` within 20 s of the first
+start, on a fatal error line, or after 5 crashes in a row, until the model
+changes or the server restarts.
+
+Lines from the helper start with `[pryon]`, including one every 30 s with
+`cpu=`, `accepts=`, `nearMiss=`, `restarts=`, `drops=`, `stale=` and the
+latency from word end to detection. The device stats carry `engine` (since
+v2.18.2).
+
+**Wake time reported to the controller (since v2.18.3).** A Pryon wake is
+reported at Pryon's decision, not at the word (about 490 ms earlier), so the
+controller's 250 ms arbitration hold (upstream #790) starts when the first
+claim arrives and the louder Echo wins. The listen session and the wake level
+still use the word time; the message carries `wordAgeMs` for diagnosis.
+`EM_PRYON_REPORT_AT=word` restores the word time.
 
 **Kill switch**, no new build needed: `touch /data/local/etc/echomuse/no_pryon`
 (or `EM_PRYON=0`), then change the model or restart the server.
@@ -89,7 +105,10 @@ Settings (environment): `EM_PRYON_HELPER`, `EM_PRYON_LIB`, `EM_PRYON_MANIFEST`,
 `EM_PRYON_WARMUP_MS` (3000), `EM_PRYON_RESET` (0: a mic restart is ignored by
 the decoder; 1: the decoder session restarts and warms up again),
 `EM_PRYON_AT_OFFSET_FRAMES` (3; see `wakeAt` in `pryon.go`),
-`EM_PRYON_READY_TIMEOUT_MS` (20000, the first start only).
+`EM_PRYON_READY_TIMEOUT_MS` (20000, the first start only),
+`EM_PRYON_FALLBACK` (unset: no openWakeWord fallback; `oww`: the fallback of
+servers before v2.18.3), `EM_PRYON_REPORT_AT` (unset: report Pryon's decision
+time; `word`: the word time, as before v2.18.3).
 
 ## Protocol (version 1)
 
@@ -121,17 +140,12 @@ detects, is filtered out.
 - **No heartbeat.** A helper that keeps reading audio while the library's
   decoder has stopped producing results is not detected: no crash, no
   restart, just no wakes. (One that stops reading is restarted after 2 s.)
-- **Several Echoes: Pryon wins the arbitration.** The time a Pryon wake
-  reports is the capture time of the frame three frames before the word end,
-  so that the session does not cut off the start of the command. The
-  controller also reads that time as "heard at" for "first to hear wins".
-  openWakeWord reports the frame where its score crossed, which is at or
-  after the word end. A Pryon Echo therefore claims to have heard the same
-  word about 320 to 560 ms earlier than an openWakeWord Echo. With a 300 ms
-  arbitration window it wins even from across the house, and the two may be
-  counted as separate utterances, so both answer. With a single Echo this
-  does not matter. Fixing it needs separate session-start and heard-at
-  times, which means a change to `server.go`.
+- **Several Echoes.** Since v2.18.3 a Pryon wake reports Pryon's decision
+  time (see above), so between Pryon Echoes the controller's level-based
+  arbitration (upstream #790) decides. Two limits: decisions more than 250 ms
+  apart are still decided by arrival, and in a mixed fleet (an Echo on
+  openWakeWord through the kill switch, next to Pryon Echoes) the
+  openWakeWord Echo reports about 430 ms earlier and always wins.
 - Only the en-US ALEXA model is mapped (`pryon_alexa`). For any other model,
   set `EM_PRYON_MANIFEST`.
 - **Inherited descriptors.** The server's microphone descriptor is opened

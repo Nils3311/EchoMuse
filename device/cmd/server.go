@@ -1498,7 +1498,16 @@ func onWakeCrossing(cc *client.ControlClient, dc *client.DataClient,
 	if ok {
 		lv = &client.WakeLevel{Level: level, Peak: peak}
 	}
-	cc.SendOwwWake(score, crossed, at, session, dc.ListenFloor(), barge, lv)
+	// Pryon reports its decision time instead of the word's (see
+	// shadow.WakeReportTime): the session above and the level still use `at`.
+	reportAt := at
+	if sc := dc.ShadowScorer(); sc != nil {
+		reportAt = shadow.WakeReportTime(sc.Info(), at, time.Now())
+	}
+	if !reportAt.Equal(at) {
+		log.Printf("[listen] wake reported at Pryon's decision, word heard %dms earlier", reportAt.Sub(at).Milliseconds())
+	}
+	cc.SendOwwWake(score, crossed, reportAt, at, session, dc.ListenFloor(), barge, lv)
 }
 
 // syncListenState resolves what the device does with its wake stream and

@@ -55,6 +55,14 @@ var (
 	killPid         = func(pid int) error { return syscall.Kill(pid, syscall.SIGKILL) }
 )
 
+// pryonFallbackAllowed: whether a device that cannot run Pryon may score with
+// openWakeWord instead. Off unless EM_PRYON_FALLBACK=oww — a fleet that is
+// meant to run Pryon everywhere wants a device without it to be visibly
+// broken (degraded, not answering), not quietly worse at hearing "Alexa".
+// The kill switch below is a deliberate choice of openWakeWord and is not
+// affected.
+func pryonFallbackAllowed() bool { return os.Getenv("EM_PRYON_FALLBACK") == "oww" }
+
 // pryonDisabled reports whether the kill switch is set, and which one.
 func pryonDisabled() (bool, string) {
 	if os.Getenv("EM_PRYON") == "0" {
@@ -194,6 +202,7 @@ func openPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, erro
 		return nil, err
 	}
 	e := newPryonEngine(stem, cfg, fallback)
+	e.noFallback = !pryonFallbackAllowed()
 	if note != "" {
 		e.setInfo(e.Info() + ", " + note)
 	}
@@ -217,20 +226,23 @@ func openPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, erro
 // otherwise openWakeWord on the same <stem>.onnx, with the reason in Info.
 func openWithPryon(dir, stem string, threshold float32,
 	onCross func(score, threshold float32, at time.Time)) (*Scorer, error) {
-	// openWakeWord first: it is what a Pryon failure at run time falls back
-	// to, in the background, long after this call has returned. Without it a
-	// failover would leave a loaded scorer that never scores — a deaf device
-	// still reporting "local" — where today's error reports "degraded". So
-	// where openWakeWord could not run, Pryon is not started either, and the
-	// error is today's. Only a cheap check: actually loading ORT here would
-	// cost 12MB for an engine that may never be used. A runtime that is
-	// present but does not load is the one case still caught only at failover
-	// (the scorer then reports every frame as an error).
-	if err := checkOWW(dir, stem); err != nil {
-		return nil, err
+	// openWakeWord's files are checked first only where openWakeWord may be
+	// used: with EM_PRYON_FALLBACK=oww it is what a Pryon failure at run time
+	// falls back to, in the background, long after this call has returned,
+	// and without it a failover would leave a loaded scorer that never scores.
+	// Without a fallback (the default) Pryon does not need them, and their
+	// absence must not keep Pryon from running. The kill switch below checks
+	// them itself. Only a cheap check: loading ORT here would cost 12MB.
+	if pryonFallbackAllowed() {
+		if err := checkOWW(dir, stem); err != nil {
+			return nil, err
+		}
 	}
 	var reason string
 	if off, why := pryonDisabled(); off {
+		if err := checkOWW(dir, stem); err != nil {
+			return nil, err
+		}
 		reason = "disabled: " + why
 	} else {
 		cfg, err := pryonConfigFor(stem)
@@ -259,6 +271,9 @@ func openWithPryon(dir, stem string, threshold float32,
 		reason = "unavailable: " + strings.TrimPrefix(err.Error(), "pryon: ")
 		if installed != "" {
 			reason += "; " + installed
+		}
+		if !pryonFallbackAllowed() {
+			return nil, fmt.Errorf("pryon %s (no openWakeWord fallback; EM_PRYON_FALLBACK=oww allows one)", reason)
 		}
 	}
 	o, err := openOWW(dir, stem)
