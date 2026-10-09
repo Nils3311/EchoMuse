@@ -38,7 +38,16 @@ cd device && go test ./internal/wakeword/shadow/ -run RealHelper
 
 ## Install on the device
 
-From the dashboard terminal, with the binary served from your machine:
+Nothing to do since v2.18.2: the release build compiles the helper and embeds
+it in the server, which writes it to `/data/local/share/echomuse/pryon/pryon_wake`
+before starting Pryon (only when it is missing or differs;
+`device/internal/wakeword/shadow/pryon_install.go`). A helper you built
+yourself is overwritten there — run it from another path and point
+`EM_PRYON_HELPER` at it. The server's shadow stats carry `engine`, which says
+whether Pryon really runs or why it fell back.
+
+By hand (servers before v2.18.2), from the dashboard terminal, with the binary
+served from your machine:
 
 ```sh
 busybox mkdir -p /data/local/share/echomuse/pryon && cd /data/local/share/echomuse/pryon

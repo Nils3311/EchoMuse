@@ -2,6 +2,8 @@
 .DS_Store
 __pycache__
 /device/build/
+# Pryon helper, compiled into here and embedded by the device build
+/device/internal/wakeword/shadow/pryonbin/pryon_wake
 /emos/build/
 controller/.env
 controller/.venv/

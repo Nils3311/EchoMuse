@@ -64,7 +64,11 @@ jobs:
             -v "${{ github.workspace }}/device":/sdk \
             -v "${{ github.workspace }}/GoTinyAlsa":/GoTinyAlsa \
             echomuse-compiler \
-            -c "cd /sdk && mkdir -p build && go build \
+            -c "cd /sdk && mkdir -p build \
+              && \$CC -O2 -Wall -Wextra -fPIE -pie -std=gnu11 \
+                   -o internal/wakeword/shadow/pryonbin/pryon_wake \
+                   tools/pryon_wake/pryon_wake.c -ldl \
+              && go build \
               -tags server \
               -ldflags \"-X github.com/wilbowes/EchoMuse/internal/client.Version=$GITHUB_REF_NAME \
                          -X github.com/wilbowes/EchoMuse/internal/client.BuildUnix=$(date +%s)\" \
@@ -87,6 +91,13 @@ jobs:
             exit 1
           fi
           echo "binary carries $GITHUB_REF_NAME"
+          # The Pryon helper must be embedded (pryon_install.go): without it a
+          # device that lacks the helper falls back to openWakeWord silently.
+          if ! strings device/build/server | grep -qF "usage: pryon_wake"; then
+            echo "::error::server does not embed the pryon_wake helper"
+            exit 1
+          fi
+          echo "binary embeds pryon_wake"
 
       # Provenance: a signed statement, logged in Sigstore's public ledger,
       # that THIS workflow at THIS commit built THIS binary. Check one with

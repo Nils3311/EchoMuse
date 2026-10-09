@@ -901,6 +901,10 @@ func shadowStats(dc *client.DataClient) interface{} {
 		"errors":    st.Errors,
 		"lastErr":   st.LastErr,
 		"ready":     sc.Ready(),
+		// Which engine really scores: "pryon, model …" or the openWakeWord
+		// line with "(pryon unavailable: …)" when Pryon fell back. Without
+		// it a fallback was visible only in the device's own log.
+		"engine": sc.Info(),
 		// Maxima that explain a drop: the slowest single inference (consumer
 		// stalling) against the longest gap between frames arriving (producer
 		// bursting). Cheap enough to send every window — two integers on a
