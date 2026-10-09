@@ -98,6 +98,7 @@ func TestOpenRunsPryonForAPryonModel(t *testing.T) {
 // already put on the device — with the reason in Info, logged once by the
 // caller.
 func TestOpenFallsBackToOpenWakeWord(t *testing.T) {
+	t.Setenv("EM_PRYON_FALLBACK", "oww") // the fallback is opt-in
 	cases := []struct {
 		name   string
 		setup  func(t *testing.T, lib, manifest string)
@@ -161,6 +162,7 @@ func TestOpenFallsBackToOpenWakeWord(t *testing.T) {
 func TestOpenNeedsTheFallbackFirst(t *testing.T) {
 	stubOWW(t, nil)
 	pryonFiles(t)
+	t.Setenv("EM_PRYON_FALLBACK", "oww") // only a fallback needs openWakeWord's files
 	for _, missing := range []string{"libonnxruntime.so", "melspectrogram.onnx", "embedding_model.onnx", "pryon_alexa.onnx"} {
 		t.Run(missing, func(t *testing.T) {
 			dir := t.TempDir()
@@ -189,6 +191,7 @@ func TestOpenFallbackFailureIsTodaysError(t *testing.T) {
 	oww := errors.New("shadow: classifier model not installed at /x/pryon_alexa.onnx")
 	stubOWW(t, oww)
 	pryonFiles(t)
+	t.Setenv("EM_PRYON_FALLBACK", "oww") // the fallback is opt-in
 	t.Setenv("EM_PRYON_LIB", "/nonexistent/libpryon.so")
 	_, err := Open(pryonModelPath, 0.5, nil)
 	if !errors.Is(err, oww) || !strings.Contains(err.Error(), "libpryon.so not found") {

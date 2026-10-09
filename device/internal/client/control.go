@@ -1468,7 +1468,11 @@ func (c *ControlClient) SendOwwShadowCross(score float32, ageMs int64) {
 //
 // level is how loud the wake word was here (wakelevel.go), nil if its frames
 // had already left the ring; the controller logs it with the capture time.
-func (c *ControlClient) SendOwwWake(score, threshold float32, capturedAt time.Time,
+//
+// wordAt is when the word itself was heard. It differs from capturedAt only
+// for Pryon (shadow.WakeReportTime) and is then sent as wordAgeMs, which the
+// controller ignores: it keeps the engine's latency visible for diagnosis.
+func (c *ControlClient) SendOwwWake(score, threshold float32, capturedAt, wordAt time.Time,
 	session uint32, floor float64, barge bool, level *WakeLevel) {
 	msg := map[string]interface{}{
 		"type":         "oww_wake",
@@ -1476,6 +1480,9 @@ func (c *ControlClient) SendOwwWake(score, threshold float32, capturedAt time.Ti
 		"threshold":    threshold,
 		"ageMs":        time.Since(capturedAt).Milliseconds(),
 		"capturedMono": MonoMs(capturedAt),
+	}
+	if !wordAt.Equal(capturedAt) {
+		msg["wordAgeMs"] = time.Since(wordAt).Milliseconds()
 	}
 	if session != 0 {
 		msg["session"] = session

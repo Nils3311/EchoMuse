@@ -460,7 +460,14 @@ type pryonEngine struct {
 	// Failover to openWakeWord. fallback builds it — off the scorer goroutine,
 	// because it loads ONNX Runtime (12MB) and that would cost seconds of
 	// frames. inner is set once it is there.
-	fallback   func() (engine, error)
+	fallback func() (engine, error)
+	// noFallback: never fail over. A helper that keeps dying is restarted
+	// forever on the backoff (capped at its last step), and one that reports
+	// a fatal error or never comes up is treated as a crash like any other —
+	// the device stays on Pryon or hears nothing, and says so, instead of
+	// quietly scoring with openWakeWord. Set by openWithPryon unless
+	// EM_PRYON_FALLBACK=oww.
+	noFallback bool
 	failing    bool
 	failReason string
 	fbDone     chan struct{}
@@ -768,19 +775,27 @@ func (e *pryonEngine) start(now time.Time) error {
 }
 
 // crashed applies the restart policy after a helper ended (or failed to
-// start). Every death within pryonLongRun of the start counts towards giving
-// up, whoever caused it: a SIGKILL from Android's low-memory killer included.
-// Leaving those out let a helper that is killed again and again restart
-// forever, deaf in every backoff, without ever falling back to openWakeWord.
+// start). Every death within pryonLongRun of the start counts towards the
+// series, whoever caused it: a SIGKILL from Android's low-memory killer
+// included. With EM_PRYON_FALLBACK=oww the fifth in a row gives up on Pryon
+// for openWakeWord; without it (noFallback, the default) the helper is
+// restarted for good on the capped backoff.
 func (e *pryonEngine) crashed(at time.Time, uptime time.Duration, why string) {
 	if uptime >= pryonLongRun {
 		e.crashStreak, e.backoffIdx = 0, 0
 	} else {
 		e.crashStreak++
 	}
-	if e.crashStreak >= pryonMaxCrashes {
+	if e.crashStreak >= pryonMaxCrashes && !e.noFallback {
 		e.failover(fmt.Sprintf("%d crashes in a row, last: %s", e.crashStreak, why))
 		return
+	}
+	if e.crashStreak == pryonMaxCrashes && e.noFallback {
+		// Once per series: the point where the old behaviour gave up. Said
+		// plainly, because without a fallback this Echo now hears nothing.
+		e.logf("[pryon] WARNING: %d crashes in a row (last: %s) — this Echo hears no wake word "+
+			"until the helper runs again; retrying every %s, no openWakeWord fallback",
+			e.crashStreak, why, pryonBackoff[len(pryonBackoff)-1])
 	}
 	delay := pryonBackoff[min(e.backoffIdx, len(pryonBackoff)-1)]
 	e.backoffIdx++
@@ -842,6 +857,13 @@ func (e *pryonEngine) handleExit(p *pryonProc) {
 	uptime := p.exitAt.Sub(p.started)
 	why := describeExit(p)
 	switch {
+	case e.noFallback:
+		// No openWakeWord to fall back to: every ending is a crash, retried
+		// on the backoff. The reason stays in lastErr and the log.
+		if p.fatal != "" {
+			why = "reported " + p.fatal
+		}
+		e.crashed(p.exitAt, uptime, why)
 	case p.fatal != "":
 		e.failover("helper reported " + p.fatal)
 	case p.killReason != "" && !e.everReady:
