@@ -286,8 +286,9 @@ Pryon; a mixed fleet, arbitration, several Echoes; an Echo Dot 3rd gen.
   chosen as `at`. Live: 68 ms median, 210 ms max over a few minutes; nothing
   known for long runs or a loaded device.
 - **Size and rollout.** ~2200 lines of code for one keyword on one device
-  model (section 10). The helper is not part of the Local Build; it is
-  copied by hand.
+  model (section 10). Since v2.18.2 the helper is compiled by the release
+  build and embedded in the server, which installs it on the device; before,
+  it was copied by hand.
 
 **Separate observation, not part of this change.** Stored conversation
 recordings after wake-up on this device are quiet: largest peak -21 to -24
@@ -326,10 +327,11 @@ from `CONTRIBUTING.md`.
 1. Build the server (`cd device && ./compile.sh`) and deploy it with the
    dashboard's Updates > Local Build. A second Local Build overwrites the slot
    that held the release, so the rollback target changes.
-2. Build the helper in the `echomuse-compiler` image
-   (`device/tools/pryon_wake/build.sh`) and copy it to
-   `/data/local/share/echomuse/pryon/pryon_wake`, mode 755 (commands in the
-   helper's README). Check it alone: `./pryon_wake -f some.wav -x 1`.
+2. Servers from v2.18.2 install the helper themselves. For older ones, build
+   it in the `echomuse-compiler` image (`device/tools/pryon_wake/build.sh`)
+   and copy it to `/data/local/share/echomuse/pryon/pryon_wake`, mode 755
+   (commands in the helper's README). Check it alone:
+   `./pryon_wake -f some.wav -x 1`.
 3. Upload a copy of `alexa_v0.1.onnx` as custom model `pryon_alexa.onnx`.
 4. In the **same** save, select it and set detection to "On this Echo" (or
    `shadow` to compare without acting). In "On the controller" mode nothing

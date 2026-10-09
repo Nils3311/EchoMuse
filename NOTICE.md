@@ -6,7 +6,8 @@ with redistribution under MIT, and each requires that its copyright notice
 travels with the software — which is what this file is for.
 
 The device binary published on the releases page is a **combined work**: it
-links SpeexDSP and GoTinyAlsa. BSD-3-Clause asks that binary redistributions
+links SpeexDSP and GoTinyAlsa, and embeds the `pryon_wake` helper (built with
+`pryon_api.h`, MIT). BSD-3-Clause asks that binary redistributions
 reproduce the copyright notice "in the documentation or other materials
 provided with the distribution", and this file is that material. If the binary
 is ever distributed somewhere other than alongside this repository, this notice

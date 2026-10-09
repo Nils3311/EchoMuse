@@ -25,11 +25,16 @@ SUPPRESS="-Wno-deprecated-declarations -Wno-null-dereference"
 # bogus date before NTP syncs, and cert NotBefore checks would otherwise
 # strand it (see internal/client/tlscreds.go).
 BUILD_UNIX=$(date +%s)
-BUILD_CMD="cd /sdk && mkdir -p build && go build \
+# The Pryon helper is compiled first and embedded into the server
+# (internal/wakeword/shadow/pryon_install.go); \$CC is the image's compiler.
+BUILD_CMD="cd /sdk && mkdir -p build \
+    && \$CC -O2 -Wall -Wextra -fPIE -pie -std=gnu11 \
+         -o internal/wakeword/shadow/pryonbin/pryon_wake tools/pryon_wake/pryon_wake.c -ldl \
+    && go build \
     -tags \"server ${EM_EXTRA_TAGS}\" \
     -ldflags \"-X github.com/wilbowes/EchoMuse/internal/client.Version=${VERSION} \
                -X github.com/wilbowes/EchoMuse/internal/client.BuildUnix=${BUILD_UNIX}\" \
-    -o build/server ./cmd/"
+    -o build/server ./cmd/; rc=\$?; rm -f internal/wakeword/shadow/pryonbin/pryon_wake; exit \$rc"
 
 if docker run --rm \
   --entrypoint bash \

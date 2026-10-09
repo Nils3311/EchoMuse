@@ -2,6 +2,7 @@ package shadow
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -23,9 +24,10 @@ import (
 // "Alexa".
 const PryonPrefix = "pryon_"
 
-// Where the pieces live on the device. The helper is installed by hand next to
-// the openWakeWord files; the library and the models are Amazon's and come
-// with the device's /system, which is why none of them is distributed here.
+// Where the pieces live on the device. The helper comes inside the server
+// build and is put in place next to the openWakeWord files before Pryon starts
+// (pryon_install.go); the library and the models are Amazon's and come with
+// the device's /system, which is why none of them is distributed here.
 const (
 	DefaultPryonHelper = "/data/local/share/echomuse/pryon/pryon_wake"
 	DefaultPryonLib    = "/system/lib/libpryon.so"
@@ -47,6 +49,9 @@ var pryonManifests = map[string]string{
 // Variables only so tests can point them elsewhere.
 var (
 	pryonKillSwitch = "/data/local/etc/echomuse/no_pryon"
+	// pryonHelperPath is where the embedded helper is installed and run from
+	// unless EM_PRYON_HELPER names another one.
+	pryonHelperPath = DefaultPryonHelper
 	killPid         = func(pid int) error { return syscall.Kill(pid, syscall.SIGKILL) }
 )
 
@@ -64,7 +69,7 @@ func pryonDisabled() (bool, string) {
 // pryonConfigFor reads the configuration for stem from the environment.
 func pryonConfigFor(stem string) (pryonConfig, error) {
 	cfg := pryonConfig{
-		Helper:         envOr("EM_PRYON_HELPER", DefaultPryonHelper),
+		Helper:         envOr("EM_PRYON_HELPER", pryonHelperPath),
 		Lib:            envOr("EM_PRYON_LIB", DefaultPryonLib),
 		Manifest:       os.Getenv("EM_PRYON_MANIFEST"),
 		WarmupMs:       DefaultPryonWarmupMs,
@@ -181,13 +186,27 @@ func killOrphanHelpers(base string, logf func(string, ...any)) int {
 // listen_close behind it. The engine reports not ready until
 // READY arrives, and a helper that never says it is handled like a crash —
 // on the first start, by falling back to openWakeWord.
-func openPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, error)) (*pryonEngine, error) {
+//
+// note, when not empty, is appended to Info before the helper starts, so a
+// failover that sets its own Info cannot be overwritten by it afterwards.
+func openPryonEngine(stem string, cfg pryonConfig, fallback func() (engine, error), note string) (*pryonEngine, error) {
 	if err := checkPryon(cfg); err != nil {
 		return nil, err
 	}
 	e := newPryonEngine(stem, cfg, fallback)
+	if note != "" {
+		e.setInfo(e.Info() + ", " + note)
+	}
 	killOrphanHelpers(filepath.Base(cfg.Helper), e.logf)
-	if err := e.start(e.now()); err != nil {
+	err := e.start(e.now())
+	if errors.Is(err, syscall.ETXTBSY) {
+		// The helper was just written. If another goroutine forked while the
+		// write descriptor was open, the child still holds it until it execs
+		// (golang.org/issue/22315); that is over within milliseconds.
+		time.Sleep(50 * time.Millisecond)
+		err = e.start(e.now())
+	}
+	if err != nil {
 		_ = e.Close()
 		return nil, fmt.Errorf("pryon: helper did not start: %w", err)
 	}
@@ -215,6 +234,15 @@ func openWithPryon(dir, stem string, threshold float32,
 		reason = "disabled: " + why
 	} else {
 		cfg, err := pryonConfigFor(stem)
+		var installed string
+		if err == nil {
+			// A failed install is not fatal by itself: an older helper may
+			// still be there, and checkPryon below decides.
+			var ierr error
+			if installed, ierr = ensurePryonHelper(cfg); ierr != nil {
+				installed = strings.TrimPrefix(ierr.Error(), "pryon: ")
+			}
+		}
 		if err == nil {
 			fallback := func() (engine, error) {
 				o, err := openOWW(dir, stem)
@@ -224,11 +252,14 @@ func openWithPryon(dir, stem string, threshold float32,
 				return o, nil
 			}
 			var eng *pryonEngine
-			if eng, err = openPryonEngine(stem, cfg, fallback); err == nil {
+			if eng, err = openPryonEngine(stem, cfg, fallback, installed); err == nil {
 				return newScorer(eng, threshold, onCross), nil
 			}
 		}
 		reason = "unavailable: " + strings.TrimPrefix(err.Error(), "pryon: ")
+		if installed != "" {
+			reason += "; " + installed
+		}
 	}
 	o, err := openOWW(dir, stem)
 	if err != nil {
